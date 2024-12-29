@@ -1,11 +1,14 @@
 #include <stdio.h>
 
 int main() {
-    float x = 5.2;
-    float y = 10.11;
+    int x = 5.2;
+    int y = 10.11;
+    int a = 22;
+    int z = 5;
+    int azres = a + z;
     float result = x / y;
     if (x < 10) {
-        printf("%f\n", x);
+        printf("%d\n", x);
     }
     while (x < 10) {
         x = x + 1;

@@ -62,12 +62,10 @@ class PythonToCCompiler:
                     
                     statements.append(f"while ({' '.join(condition)}) {{")
                     
-                    # Skip the colon and move to next line
                     current_token = next(tokens, None)  # Skip colon
                     if current_token and current_token[0] == 'NEWLINE':
-                        current_token = next(tokens, None)  # Move to next line
+                        current_token = next(tokens, None)
                     
-                    # Parse the loop body
                     if current_token and current_token[0] == 'NAME':
                         var_name = current_token[1]
                         current_token = next(tokens, None)
@@ -93,12 +91,10 @@ class PythonToCCompiler:
                     
                     statements.append(f"if ({' '.join(condition)}) {{")
                     
-                    # Skip the colon and move to the next line
                     current_token = next(tokens, None)  # Skip colon
                     if current_token and current_token[0] == 'NEWLINE':
-                        current_token = next(tokens, None)  # Move to next line
+                        current_token = next(tokens, None)
                     
-                    # Parse the if body
                     if current_token and current_token[0] == 'NAME':
                         if current_token[1] == 'print':
                             current_token = next(tokens, None)  # Skip print
@@ -106,7 +102,6 @@ class PythonToCCompiler:
                                 current_token = next(tokens, None)  # Skip left paren
                                 if current_token:
                                     var_name = current_token[1]
-                                    # Check if variable is float or int
                                     format_spec = '%f' if var_name in self.variables and self.variables[var_name][0] == 'float' else '%d'
                                     statements.append(f'    printf("{format_spec}\\n", {var_name});')
                         else:
@@ -119,58 +114,67 @@ class PythonToCCompiler:
                                     statements.append(f"    {var_name} = {var_value};")
                     
                     statements.append("}")
-                    
+
                 elif current_token[1] == 'for':  # Handle for loop
-                    current_token = next(tokens, None)  # Get loop variable
+                    current_token = next(tokens, None)
                     if current_token and current_token[0] == 'NAME':
                         loop_var = current_token[1]
                         
-                        # Skip 'in range('
                         while current_token and (current_token[0] != 'NUMBER'):
                             current_token = next(tokens, None)
                         
                         start = current_token[1]
-                        current_token = next(tokens, None)  # Skip start number
-                        current_token = next(tokens, None)  # Skip comma
+                        current_token = next(tokens, None)
+                        current_token = next(tokens, None)
                         end = current_token[1]
                         
                         statements.append(f"for (int {loop_var} = {start}; {loop_var} < {end}; {loop_var}++) {{")
                         
-                        # Skip until print
                         while current_token and (current_token[0] != 'NAME' or current_token[1] != 'print'):
                             current_token = next(tokens, None)
                         
                         if current_token and current_token[1] == 'print':
-                            current_token = next(tokens, None)  # Skip print
+                            current_token = next(tokens, None)
                             if current_token and current_token[0] == 'LPAREN':
-                                current_token = next(tokens, None)  # Skip left paren
+                                current_token = next(tokens, None)
                                 if current_token and current_token[0] == 'NAME':
                                     var_to_print = current_token[1]
                                     statements.append(f'    printf("%d\\n", {var_to_print});')
                         
                         statements.append("}")
-                    
-                else:  # Handle variable assignment
+
+                else:  # Handle variable assignment, including expressions like 'a * z'
                     var_name = current_token[1]
                     current_token = next(tokens, None)
                     
                     if current_token and current_token[0] == 'ASSIGN':
                         current_token = next(tokens, None)
-                        if current_token and current_token[0] == 'NUMBER':
-                            value = current_token[1]
-                            var_type = 'float' if '.' in value else 'int'
-                            statements.append(f"{var_type} {var_name} = {value};")
-                            self.variables[var_name] = (var_type, value)
-                        elif current_token and current_token[0] == 'NAME':
-                            first_var = current_token[1]
+                        expression_parts = []
+                        
+                        while current_token and current_token[0] not in ['NEWLINE', 'ASSIGN', 'PLUS', 'MINUS', 'MULTIPLY', 'DIVIDE']:
+                            expression_parts.append(current_token[1])
                             current_token = next(tokens, None)
-                            if current_token and current_token[0] == 'DIVIDE':
+                        
+                        if current_token and current_token[0] in ['PLUS', 'MINUS', 'MULTIPLY', 'DIVIDE']:
+                            operator = current_token[1]
+                            current_token = next(tokens, None)
+                            expression_parts.append(operator)
+                            while current_token and current_token[0] not in ['NEWLINE', 'ASSIGN']:
+                                expression_parts.append(current_token[1])
                                 current_token = next(tokens, None)
-                                second_var = current_token[1]
-                                statements.append(f"float {var_name} = {first_var} / {second_var};")
+
+                        # Generate the assignment for expressions
+                        expr_str = ' '.join(expression_parts)
+                        if '*' in expr_str or '/' in expr_str:
+                            var_type = 'float'
+                        else:
+                            var_type = 'int'
+
+                        statements.append(f"{var_type} {var_name} = {expr_str};")
+                        self.variables[var_name] = (var_type, expr_str)
 
             current_token = next(tokens, None)
-                    
+
         return statements
 
     def generate_c_code(self, python_code):
