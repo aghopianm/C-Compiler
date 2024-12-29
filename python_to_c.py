@@ -5,20 +5,36 @@ class PythonToCCompiler:
         self.variables = {}
 
     def tokenize(self, code):
-        # Simple regular expression for tokenizing Python code
         token_specification = [
-            ('NUMBER', r'\d+'),
+            ('NUMBER', r'\d+(\.\d+)?'),
             ('ASSIGN', r'='),
             ('NAME', r'[A-Za-z_][A-Za-z0-9_]*'),
             ('PLUS', r'\+'),
+            ('MINUS', r'-'),
+            ('MULTIPLY', r'\*'),
+            ('DIVIDE', r'/'),
+            ('LT', r'<'),
+            ('GT', r'>'),
+            ('EQ', r'=='),
+            ('WHILE', r'while'),
+            ('FOR', r'for'),
+            ('IF', r'if'),
+            ('IN', r'in'),
+            ('COLON', r':'),
             ('NEWLINE', r'\n'),
             ('SKIP', r'[ \t]+'),
+            ('COMMENT', r'#.*'),
+            ('LPAREN', r'\('),
+            ('RPAREN', r'\)'),
+            ('COMMA', r','),
             ('MISMATCH', r'.'),
         ]
-        
+
         tok_regex = '|'.join(f'(?P<{pair[0]}>{pair[1]})' for pair in token_specification)
         get_token = re.compile(tok_regex).match
         position = 0
+        tokens = []
+        
         while position < len(code):
             match = get_token(code, position)
             if match is None:
@@ -26,32 +42,135 @@ class PythonToCCompiler:
             position = match.end()
             type_ = match.lastgroup
             value = match.group()
-            if type_ != 'SKIP':
-                yield type_, value
+            if type_ not in ['COMMENT', 'SKIP']:
+                tokens.append((type_, value))
+                
+        return iter(tokens)
 
     def parse(self, tokens):
-        # Simple parser for assignment and addition
         statements = []
         current_token = next(tokens, None)
-        result_declared = False  # To avoid multiple declarations of 'result'
+
         while current_token:
             if current_token[0] == 'NAME':
-                var_name = current_token[1]
-                current_token = next(tokens, None)
-                if current_token and current_token[0] == 'ASSIGN':
+                if current_token[1] == 'while':  # Handle while loop
                     current_token = next(tokens, None)
-                    if current_token and current_token[0] == 'NUMBER':
-                        var_value = int(current_token[1])
-                        # Declare the variable with type 'int'
-                        statements.append(f"int {var_name} = {var_value};")
-                        self.variables[var_name] = var_value
-            elif current_token[0] == 'PLUS':
-                # Handle the addition expression, reference the variables x and y
-                if 'x' in self.variables and 'y' in self.variables:
-                    if not result_declared:  # Only declare 'result' once
-                        statements.append(f"int result = x + y;")
-                        result_declared = True
+                    condition = []
+                    while current_token and current_token[0] != 'COLON':
+                        condition.append(current_token[1])
+                        current_token = next(tokens, None)
+                    
+                    statements.append(f"while ({' '.join(condition)}) {{")
+                    
+                    # Skip the colon and move to next line
+                    current_token = next(tokens, None)  # Skip colon
+                    if current_token and current_token[0] == 'NEWLINE':
+                        current_token = next(tokens, None)  # Move to next line
+                    
+                    # Parse the loop body
+                    if current_token and current_token[0] == 'NAME':
+                        var_name = current_token[1]
+                        current_token = next(tokens, None)
+                        if current_token and current_token[0] == 'ASSIGN':
+                            current_token = next(tokens, None)
+                            if current_token and current_token[0] == 'NAME':
+                                first_op = current_token[1]
+                                current_token = next(tokens, None)
+                                if current_token and current_token[0] == 'PLUS':
+                                    current_token = next(tokens, None)
+                                    if current_token and current_token[0] == 'NUMBER':
+                                        increment = current_token[1]
+                                        statements.append(f"    {var_name} = {first_op} + {increment};")
+                    
+                    statements.append("}")
+
+                elif current_token[1] == 'if':  # Handle if statements
+                    current_token = next(tokens, None)
+                    condition = []
+                    while current_token and current_token[0] != 'COLON':
+                        condition.append(current_token[1])
+                        current_token = next(tokens, None)
+                    
+                    statements.append(f"if ({' '.join(condition)}) {{")
+                    
+                    # Skip the colon and move to the next line
+                    current_token = next(tokens, None)  # Skip colon
+                    if current_token and current_token[0] == 'NEWLINE':
+                        current_token = next(tokens, None)  # Move to next line
+                    
+                    # Parse the if body
+                    if current_token and current_token[0] == 'NAME':
+                        if current_token[1] == 'print':
+                            current_token = next(tokens, None)  # Skip print
+                            if current_token and current_token[0] == 'LPAREN':
+                                current_token = next(tokens, None)  # Skip left paren
+                                if current_token:
+                                    var_name = current_token[1]
+                                    # Check if variable is float or int
+                                    format_spec = '%f' if var_name in self.variables and self.variables[var_name][0] == 'float' else '%d'
+                                    statements.append(f'    printf("{format_spec}\\n", {var_name});')
+                        else:
+                            var_name = current_token[1]
+                            current_token = next(tokens, None)
+                            if current_token and current_token[0] == 'ASSIGN':
+                                current_token = next(tokens, None)
+                                if current_token and current_token[0] == 'NUMBER':
+                                    var_value = current_token[1]
+                                    statements.append(f"    {var_name} = {var_value};")
+                    
+                    statements.append("}")
+                    
+                elif current_token[1] == 'for':  # Handle for loop
+                    current_token = next(tokens, None)  # Get loop variable
+                    if current_token and current_token[0] == 'NAME':
+                        loop_var = current_token[1]
+                        
+                        # Skip 'in range('
+                        while current_token and (current_token[0] != 'NUMBER'):
+                            current_token = next(tokens, None)
+                        
+                        start = current_token[1]
+                        current_token = next(tokens, None)  # Skip start number
+                        current_token = next(tokens, None)  # Skip comma
+                        end = current_token[1]
+                        
+                        statements.append(f"for (int {loop_var} = {start}; {loop_var} < {end}; {loop_var}++) {{")
+                        
+                        # Skip until print
+                        while current_token and (current_token[0] != 'NAME' or current_token[1] != 'print'):
+                            current_token = next(tokens, None)
+                        
+                        if current_token and current_token[1] == 'print':
+                            current_token = next(tokens, None)  # Skip print
+                            if current_token and current_token[0] == 'LPAREN':
+                                current_token = next(tokens, None)  # Skip left paren
+                                if current_token and current_token[0] == 'NAME':
+                                    var_to_print = current_token[1]
+                                    statements.append(f'    printf("%d\\n", {var_to_print});')
+                        
+                        statements.append("}")
+                    
+                else:  # Handle variable assignment
+                    var_name = current_token[1]
+                    current_token = next(tokens, None)
+                    
+                    if current_token and current_token[0] == 'ASSIGN':
+                        current_token = next(tokens, None)
+                        if current_token and current_token[0] == 'NUMBER':
+                            value = current_token[1]
+                            var_type = 'float' if '.' in value else 'int'
+                            statements.append(f"{var_type} {var_name} = {value};")
+                            self.variables[var_name] = (var_type, value)
+                        elif current_token and current_token[0] == 'NAME':
+                            first_var = current_token[1]
+                            current_token = next(tokens, None)
+                            if current_token and current_token[0] == 'DIVIDE':
+                                current_token = next(tokens, None)
+                                second_var = current_token[1]
+                                statements.append(f"float {var_name} = {first_var} / {second_var};")
+
             current_token = next(tokens, None)
+                    
         return statements
 
     def generate_c_code(self, python_code):
@@ -59,7 +178,6 @@ class PythonToCCompiler:
         statements = self.parse(tokens)
         c_code = "#include <stdio.h>\n\nint main() {\n"
         
-        # Add all parsed statements to the main function
         for statement in statements:
             c_code += f"    {statement}\n"
         
