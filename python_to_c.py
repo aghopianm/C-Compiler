@@ -111,7 +111,10 @@ class PythonToCCompiler:
                                 current_token = next(tokens, None)
                                 if current_token and current_token[0] == 'NUMBER':
                                     var_value = current_token[1]
+                                    # Check if the value is a float
+                                    var_type = 'double' if '.' in var_value else 'int'
                                     statements.append(f"    {var_name} = {var_value};")
+                                    self.variables[var_name] = (var_type, var_value)
                     
                     statements.append("}")
 
@@ -163,10 +166,10 @@ class PythonToCCompiler:
                                 expression_parts.append(current_token[1])
                                 current_token = next(tokens, None)
 
-                        # Generate the assignment for expressions
+                        # Determine the variable type based on the values
                         expr_str = ' '.join(expression_parts)
-                        if '*' in expr_str or '/' in expr_str:
-                            var_type = 'float'
+                        if '*' in expr_str or '/' in expr_str or any('.' in part for part in expression_parts):
+                            var_type = 'double'
                         else:
                             var_type = 'int'
 

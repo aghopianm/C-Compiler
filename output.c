@@ -1,12 +1,12 @@
 #include <stdio.h>
 
 int main() {
-    int x = 5.2;
-    int y = 10.11;
+    double x = 5.2;
+    double y = 10.11;
     int a = 22;
     int z = 5;
     int azres = a + z;
-    float result = x / y;
+    double result = x / y;
     if (x < 10) {
         printf("%d\n", x);
     }
